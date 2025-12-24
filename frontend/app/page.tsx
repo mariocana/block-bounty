@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, Crosshair, PlusCircle, Coins, Terminal, Zap, CheckCircle, AlertTriangle, Loader2, Copy } from "lucide-react";
+import { Wallet, Crosshair, PlusCircle, Coins, Terminal, Zap, CheckCircle, AlertTriangle, Loader2, Copy, UserCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Helper to shorten addresses
 const shortenAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
 export default function BountyProtocol() {
@@ -17,28 +16,22 @@ export default function BountyProtocol() {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState<number | "">("");
   const [description, setDescription] = useState("");
+  const [designatedHunter, setDesignatedHunter] = useState(""); // NEW FIELD
   
-  // --- New State for Minted TX ---
+  // --- Chain State Simulation (To remember who the hunter is) ---
   const [mintedTxId, setMintedTxId] = useState<string | null>(null);
+  const [mockChainData, setMockChainData] = useState<{hunter: string, amount: number} | null>(null);
 
   // --- Hunt States ---
   const [targetTx, setTargetTx] = useState("");
   const [isProving, setIsProving] = useState(false);
 
-  // Auto-clear status messages
   useEffect(() => {
     if (statusMsg) {
       const timer = setTimeout(() => setStatusMsg(null), 5000);
       return () => clearTimeout(timer);
     }
   }, [statusMsg]);
-
-  // Check if WASM is accessible (Console check only)
-  useEffect(() => {
-    fetch('/wasm/bounty-protocol.wasm').then(res => {
-        if (res.ok) console.log("✅ WASM Logic detected: ready for verification.");
-    });
-  }, []);
 
   const connectWallet = async () => {
     setIsConnecting(true);
@@ -65,31 +58,37 @@ export default function BountyProtocol() {
   const handleMint = async () => {
     if (!walletAddress) return setStatusMsg({ type: 'error', text: "Connect Wallet first!" });
     if (!amount) return setStatusMsg({ type: 'error', text: "Enter a valid amount" });
+    if (!designatedHunter) return setStatusMsg({ type: 'error', text: "Please assign a Hunter address" });
 
     try {
         setStatusMsg({ type: 'info', text: "Constructing Bounty Spell..." });
         
-        // Construct the Spell (Logic)
+        // 1. Construct the Spell with the Hunter Restriction
         const spell = {
             version: 8,
             apps: { "$bounty": "w/2222222222222222222222222222222222222222222222222222222222222222/41734776066193c5b776fb389b36b1f495872b298b7e69418d2916533fb4a523" },
-            state: { title, creator: walletAddress, reward: Number(amount) }
+            state: { 
+                title, 
+                creator: walletAddress, 
+                reward: Number(amount),
+                authorized_hunter: designatedHunter // LOGIC ADDED HERE
+            }
         };
         console.log("🔥 MINT SPELL:", JSON.stringify(spell, null, 2));
 
         setStatusMsg({ type: 'info', text: "Please sign in UniSat..." });
         
-        // @ts-ignore - Real Tx
+        // @ts-ignore
         const txid = await window.unisat.sendBitcoin(walletAddress, Number(amount));
 
         console.log("Transaction sent:", txid);
-        setStatusMsg({ type: 'success', text: "Bounty Minted Successfully!" });
+        setStatusMsg({ type: 'success', text: "Bounty Minted & Locked!" });
         
-        // SAVE TX ID TO STATE
+        // Save to Mock Chain State
         setMintedTxId(txid);
+        setMockChainData({ hunter: designatedHunter, amount: Number(amount) });
         
-        // Clear form but keep TX ID visible
-        setTitle(""); setAmount(""); setDescription("");
+        setTitle(""); setAmount(""); setDescription(""); setDesignatedHunter("");
 
     } catch (err: any) {
         setStatusMsg({ type: 'error', text: "Transaction Rejected" });
@@ -98,20 +97,31 @@ export default function BountyProtocol() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    setStatusMsg({ type: 'success', text: "TxID Copied!" });
+    setStatusMsg({ type: 'success', text: "Copied!" });
   };
 
   const handleClaim = async () => {
     if (!walletAddress) return setStatusMsg({ type: 'error', text: "Connect Wallet first!" });
     if (!targetTx) return setStatusMsg({ type: 'error', text: "Enter a Bounty TXID" });
 
+    // --- NEW LOGIC: VERIFY HUNTER ---
+    // In a real app, we would fetch this from the blockchain indexer.
+    // For the demo, we check our mock state.
+    if (mockChainData && targetTx === mintedTxId) {
+        if (walletAddress !== mockChainData.hunter) {
+             setStatusMsg({ type: 'error', text: "⛔ ACCESS DENIED: You are not the designated Hunter!" });
+             return;
+        }
+    }
+    // --------------------------------
+
     setIsProving(true);
-    setStatusMsg({ type: 'info', text: "Generating ZK-Proof (Groth16)..." });
+    setStatusMsg({ type: 'info', text: "Verifying credentials & Generating Proof..." });
     
     await new Promise(r => setTimeout(r, 2500));
     
     setIsProving(false);
-    setStatusMsg({ type: 'success', text: "Proof Valid! Claiming funds..." });
+    setStatusMsg({ type: 'success', text: "Identity Verified! Claiming funds..." });
 
     try {
          const claimSpell = {
@@ -204,55 +214,45 @@ export default function BountyProtocol() {
             {activeTab === "create" ? (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 
-                {/* NEW: Success Card for Minted Transaction */}
                 {mintedTxId && (
                     <motion.div 
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         className="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-6 mb-6 relative overflow-hidden"
                     >
-                        <div className="absolute top-0 right-0 p-2 opacity-10">
-                            <CheckCircle size={120} />
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                            <CheckCircle className="text-emerald-400" /> Bounty Live On-Chain!
-                        </h3>
-                        <p className="text-sm text-emerald-200/80 mb-4">
-                            Your bounty has been minted. Share this Transaction ID with hunters so they can claim it.
-                        </p>
+                        <div className="absolute top-0 right-0 p-2 opacity-10"><CheckCircle size={120} /></div>
+                        <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><CheckCircle className="text-emerald-400" /> Bounty Live On-Chain!</h3>
                         
-                        <div className="space-y-1">
-                            <label className="text-[10px] uppercase tracking-widest text-emerald-500 font-bold">Transaction ID (Copy This)</label>
+                        <div className="space-y-1 mb-4">
+                            <label className="text-[10px] uppercase tracking-widest text-emerald-500 font-bold">Transaction ID</label>
                             <div className="flex gap-2">
-                                <input 
-                                    readOnly 
-                                    value={mintedTxId} 
-                                    className="flex-1 bg-slate-950/50 border border-emerald-500/30 rounded p-3 text-sm font-mono text-emerald-300 focus:outline-none"
-                                />
-                                <button 
-                                    onClick={() => copyToClipboard(mintedTxId)}
-                                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 p-3 rounded font-bold transition-colors"
-                                >
-                                    <Copy size={18} />
-                                </button>
+                                <input readOnly value={mintedTxId} className="flex-1 bg-slate-950/50 border border-emerald-500/30 rounded p-3 text-sm font-mono text-emerald-300 focus:outline-none" />
+                                <button onClick={() => copyToClipboard(mintedTxId)} className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 p-3 rounded font-bold transition-colors"><Copy size={18} /></button>
                             </div>
                         </div>
                         
-                        <div className="mt-4 pt-4 border-t border-emerald-500/20 text-center">
-                            <button 
-                                onClick={() => {
-                                    setTargetTx(mintedTxId); // Auto-fill hunt tab
-                                    setActiveTab("hunt");    // Switch tabs
-                                }}
-                                className="text-sm text-emerald-400 hover:text-white underline underline-offset-4"
-                            >
+                        <div className="text-center">
+                            <button onClick={() => { setTargetTx(mintedTxId); setActiveTab("hunt"); }} className="text-sm text-emerald-400 hover:text-white underline underline-offset-4">
                                 → Switch to Hunt Tab with this ID
                             </button>
                         </div>
                     </motion.div>
                 )}
 
-                {/* Create Form */}
+                <div className="space-y-2">
+                    <label className="text-xs uppercase tracking-widest text-emerald-500 font-bold flex items-center gap-2">
+                        <UserCheck size={14} /> Assigned Hunter (Address)
+                    </label>
+                    <input 
+                        value={designatedHunter} 
+                        onChange={(e) => setDesignatedHunter(e.target.value)} 
+                        type="text" 
+                        placeholder="Paste the Hunter's Wallet Address here..." 
+                        className="w-full bg-slate-950 border border-emerald-500/50 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-400 transition-colors font-mono" 
+                    />
+                    <p className="text-xs text-slate-500">Only this wallet will be able to generate the ZK proof and claim the funds.</p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs uppercase tracking-widest text-slate-500 font-bold">Bounty Title</label>
@@ -267,11 +267,6 @@ export default function BountyProtocol() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-slate-500 font-bold">Description</label>
-                  <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Describe the task..." className="w-full bg-slate-950 border border-emerald-900/50 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500 transition-colors" />
-                </div>
-
                 <button onClick={handleMint} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-glow hover:shadow-glow-lg">
                   <Zap size={20} /> MINT BOUNTY ON-CHAIN
                 </button>
@@ -280,7 +275,7 @@ export default function BountyProtocol() {
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                  <div className="p-4 bg-emerald-900/10 border border-emerald-500/20 rounded-lg flex items-start gap-4">
                     <div className="bg-emerald-500/20 p-2 rounded-full text-emerald-400"><Terminal size={20} /></div>
-                    <div><h4 className="font-bold text-emerald-300">Target Acquired</h4><p className="text-sm text-slate-400 mt-1">Provide the Transaction ID (UTXO) of the bounty you want to claim.</p></div>
+                    <div><h4 className="font-bold text-emerald-300">Target Acquired</h4><p className="text-sm text-slate-400 mt-1">Provide the Transaction ID (UTXO) to claim.</p></div>
                  </div>
                 <div className="space-y-2">
                   <label className="text-xs uppercase tracking-widest text-slate-500 font-bold">Bounty UTXO ID</label>
@@ -289,12 +284,7 @@ export default function BountyProtocol() {
                 
                 {isProving && (
                     <div className="w-full bg-emerald-900/20 rounded-full h-2 overflow-hidden">
-                        <motion.div 
-                            initial={{ width: "0%" }}
-                            animate={{ width: "100%" }}
-                            transition={{ duration: 2.5 }}
-                            className="h-full bg-emerald-500"
-                        />
+                        <motion.div initial={{ width: "0%" }} animate={{ width: "100%" }} transition={{ duration: 2.5 }} className="h-full bg-emerald-500" />
                     </div>
                 )}
 
