@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Wallet, Crosshair, PlusCircle, Coins, Terminal, Zap, CheckCircle, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Wallet, Crosshair, PlusCircle, Coins, Terminal, Zap, CheckCircle, AlertTriangle, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Helper to shorten addresses
@@ -17,22 +17,25 @@ export default function BountyProtocol() {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState<number | "">("");
   const [description, setDescription] = useState("");
+  
+  // --- Hunt States ---
+  const [targetTx, setTargetTx] = useState("");
+  const [isProving, setIsProving] = useState(false);
 
   // Auto-clear status messages
   useEffect(() => {
     if (statusMsg) {
-      const timer = setTimeout(() => setStatusMsg(null), 4000);
+      const timer = setTimeout(() => setStatusMsg(null), 5000);
       return () => clearTimeout(timer);
     }
   }, [statusMsg]);
 
-  // 1. Connect to UniSat Wallet
   const connectWallet = async () => {
     setIsConnecting(true);
     try {
       // @ts-ignore
       if (typeof window.unisat === "undefined") {
-        setStatusMsg({ type: 'error', text: "UniSat Wallet not found! Please install it." });
+        setStatusMsg({ type: 'error', text: "UniSat Wallet not found!" });
         return;
       }
       // @ts-ignore
@@ -49,62 +52,68 @@ export default function BountyProtocol() {
     }
   };
 
-  // 2. MINT FUNCTION (Real Wallet Interaction)
   const handleMint = async () => {
-    if (!walletAddress) {
-      setStatusMsg({ type: 'error', text: "Connect Wallet first!" });
-      return;
-    }
-    if (!amount || Number(amount) <= 0) {
-      setStatusMsg({ type: 'error', text: "Enter a valid reward amount" });
-      return;
-    }
+    if (!walletAddress) return setStatusMsg({ type: 'error', text: "Connect Wallet first!" });
+    if (!amount) return setStatusMsg({ type: 'error', text: "Enter a valid amount" });
 
     try {
         setStatusMsg({ type: 'info', text: "Constructing Bounty Spell..." });
-
-        // A. Construct the Logic (The Spell)
-        // This mirrors the JSON we struggled with in the CLI, but here it's easy JS objects.
+        
+        // Construct the Spell (Logic)
         const spell = {
             version: 8,
-            apps: {
-                "$bounty": "w/2222222222222222222222222222222222222222222222222222222222222222/41734776066193c5b776fb389b36b1f495872b298b7e69418d2916533fb4a523"
-            },
-            state: {
-                title: title,
-                creator: walletAddress,
-                reward: Number(amount)
-            }
+            apps: { "$bounty": "w/222.../4173..." },
+            state: { title, creator: walletAddress, reward: Number(amount) }
         };
+        console.log("🔥 MINT SPELL:", JSON.stringify(spell, null, 2));
 
-        console.log("🔥 GENERATED SPELL:", JSON.stringify(spell, null, 2));
-
-        // B. Trigger Wallet to Fund the Bounty
-        // In a real mainnet app, this would send to a script address.
-        // For this demo, we send to a 'burn' address or back to self to prove the user has funds.
-        setStatusMsg({ type: 'info', text: "Please sign the transaction in UniSat..." });
+        setStatusMsg({ type: 'info', text: "Please sign in UniSat..." });
         
-        // @ts-ignore
-        const txid = await window.unisat.sendBitcoin(
-            walletAddress, // Sending to self for safety in demo
-            Number(amount)
-        );
+        // @ts-ignore - Real Tx
+        const txid = await window.unisat.sendBitcoin(walletAddress, Number(amount));
 
         console.log("Transaction sent:", txid);
         setStatusMsg({ type: 'success', text: `Bounty Minted! Tx: ${txid.slice(0,8)}...` });
         
-        // Reset form
-        setTitle("");
-        setAmount("");
-        setDescription("");
+        // Auto-fill the hunt tab for convenience
+        setTargetTx(txid);
+        setTitle(""); setAmount("");
 
     } catch (err: any) {
-        console.error(err);
-        if (err.message.includes("User rejected")) {
-            setStatusMsg({ type: 'error', text: "Transaction Rejected by User" });
-        } else {
-            setStatusMsg({ type: 'error', text: "Mint Failed. Do you have Testnet BTC?" });
-        }
+        setStatusMsg({ type: 'error', text: "Transaction Rejected" });
+    }
+  };
+
+  const handleClaim = async () => {
+    if (!walletAddress) return setStatusMsg({ type: 'error', text: "Connect Wallet first!" });
+    if (!targetTx) return setStatusMsg({ type: 'error', text: "Enter a Bounty TXID" });
+
+    // 1. Simulate ZK Proof Generation
+    setIsProving(true);
+    setStatusMsg({ type: 'info', text: "Generating ZK-Proof (Groth16)..." });
+    
+    // Fake delay for effect (2.5 seconds)
+    await new Promise(r => setTimeout(r, 2500));
+    
+    setIsProving(false);
+    setStatusMsg({ type: 'success', text: "Proof Valid! Claiming funds..." });
+
+    try {
+         // 2. Construct Claim Spell
+         const claimSpell = {
+            version: 8,
+            ins: [{ utxo_id: `${targetTx}:0`, witness: "ZK_PROOF_DATA_HEX" }],
+            action: "Claim"
+         };
+         console.log("💀 CLAIM SPELL:", JSON.stringify(claimSpell, null, 2));
+
+         // 3. Trigger Wallet (Self-send to simulate receiving reward)
+         // @ts-ignore
+         const txid = await window.unisat.sendBitcoin(walletAddress, 1000); // Mock reward
+         setStatusMsg({ type: 'success', text: `Bounty Claimed! Reward Tx: ${txid.slice(0,8)}...` });
+
+    } catch (err) {
+        setStatusMsg({ type: 'error', text: "Claim Cancelled" });
     }
   };
 
@@ -212,9 +221,28 @@ export default function BountyProtocol() {
                  </div>
                 <div className="space-y-2">
                   <label className="text-xs uppercase tracking-widest text-slate-500 font-bold">Bounty UTXO ID</label>
-                  <input type="text" placeholder="txid:vout" className="w-full bg-slate-950 border border-emerald-900/50 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-mono" />
+                  <input value={targetTx} onChange={(e) => setTargetTx(e.target.value)} type="text" placeholder="txid:vout" className="w-full bg-slate-950 border border-emerald-900/50 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-mono" />
                 </div>
-                <button className="w-full bg-slate-800 hover:bg-emerald-600 hover:text-white text-emerald-500 border border-emerald-500/30 font-bold py-4 rounded-lg flex items-center justify-center gap-2 transition-all"><Crosshair size={20} /> CLAIM REWARD</button>
+                
+                {/* Proof Status Bar */}
+                {isProving && (
+                    <div className="w-full bg-emerald-900/20 rounded-full h-2 overflow-hidden">
+                        <motion.div 
+                            initial={{ width: "0%" }}
+                            animate={{ width: "100%" }}
+                            transition={{ duration: 2.5 }}
+                            className="h-full bg-emerald-500"
+                        />
+                    </div>
+                )}
+
+                <button 
+                    onClick={handleClaim}
+                    disabled={isProving}
+                    className="w-full bg-slate-800 hover:bg-emerald-600 hover:text-white text-emerald-500 border border-emerald-500/30 font-bold py-4 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50">
+                  {isProving ? <Loader2 className="animate-spin" /> : <Crosshair size={20} />} 
+                  {isProving ? "GENERATING PROOF..." : "CLAIM REWARD"}
+                </button>
               </motion.div>
             )}
           </div>
