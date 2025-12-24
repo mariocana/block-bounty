@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, Crosshair, PlusCircle, Coins, Terminal, Zap, CheckCircle, AlertTriangle, Loader2, Copy, UserCheck } from "lucide-react";
+import { Wallet, Crosshair, PlusCircle, Coins, Terminal, Zap, CheckCircle, AlertTriangle, Loader2, Copy, UserCheck, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const shortenAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
-export default function BountyProtocol() {
+export default function BlockBounty() {
   const [activeTab, setActiveTab] = useState<"create" | "hunt">("create");
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -16,9 +16,9 @@ export default function BountyProtocol() {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState<number | "">("");
   const [description, setDescription] = useState("");
-  const [designatedHunter, setDesignatedHunter] = useState(""); // NEW FIELD
+  const [designatedHunter, setDesignatedHunter] = useState(""); 
   
-  // --- Chain State Simulation (To remember who the hunter is) ---
+  // --- Chain State Simulation ---
   const [mintedTxId, setMintedTxId] = useState<string | null>(null);
   const [mockChainData, setMockChainData] = useState<{hunter: string, amount: number} | null>(null);
 
@@ -61,9 +61,9 @@ export default function BountyProtocol() {
     if (!designatedHunter) return setStatusMsg({ type: 'error', text: "Please assign a Hunter address" });
 
     try {
-        setStatusMsg({ type: 'info', text: "Constructing Bounty Spell..." });
+        setStatusMsg({ type: 'info', text: "Constructing BlockBounty Spell..." });
         
-        // 1. Construct the Spell with the Hunter Restriction
+        // 1. Construct the Spell (Matching Rust Logic)
         const spell = {
             version: 8,
             apps: { "$bounty": "w/2222222222222222222222222222222222222222222222222222222222222222/41734776066193c5b776fb389b36b1f495872b298b7e69418d2916533fb4a523" },
@@ -71,7 +71,8 @@ export default function BountyProtocol() {
                 title, 
                 creator: walletAddress, 
                 reward: Number(amount),
-                authorized_hunter: designatedHunter // LOGIC ADDED HERE
+                authorized_hunter: designatedHunter, // Matches Rust 'hunter' field
+                deadline: 500000 // Mock block height
             }
         };
         console.log("🔥 MINT SPELL:", JSON.stringify(spell, null, 2));
@@ -82,7 +83,7 @@ export default function BountyProtocol() {
         const txid = await window.unisat.sendBitcoin(walletAddress, Number(amount));
 
         console.log("Transaction sent:", txid);
-        setStatusMsg({ type: 'success', text: "Bounty Minted & Locked!" });
+        setStatusMsg({ type: 'success', text: "BlockBounty Minted & Locked!" });
         
         // Save to Mock Chain State
         setMintedTxId(txid);
@@ -104,19 +105,16 @@ export default function BountyProtocol() {
     if (!walletAddress) return setStatusMsg({ type: 'error', text: "Connect Wallet first!" });
     if (!targetTx) return setStatusMsg({ type: 'error', text: "Enter a Bounty TXID" });
 
-    // --- NEW LOGIC: VERIFY HUNTER ---
-    // In a real app, we would fetch this from the blockchain indexer.
-    // For the demo, we check our mock state.
+    // LOGIC: Verify Hunter Identity
     if (mockChainData && targetTx === mintedTxId) {
         if (walletAddress !== mockChainData.hunter) {
              setStatusMsg({ type: 'error', text: "⛔ ACCESS DENIED: You are not the designated Hunter!" });
              return;
         }
     }
-    // --------------------------------
 
     setIsProving(true);
-    setStatusMsg({ type: 'info', text: "Verifying credentials & Generating Proof..." });
+    setStatusMsg({ type: 'info', text: "Verifying ZK Credentials..." });
     
     await new Promise(r => setTimeout(r, 2500));
     
@@ -149,9 +147,9 @@ export default function BountyProtocol() {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
             <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
-              <Terminal size={24} />
+              <Shield size={24} />
             </div>
-            <span className="text-xl font-bold tracking-tighter">BOUNTY_PROTOCOL</span>
+            <span className="text-xl font-bold tracking-tighter">BlockBounty</span>
           </div>
           <button
             onClick={connectWallet}
@@ -191,12 +189,13 @@ export default function BountyProtocol() {
       </div>
 
       <main className="relative max-w-4xl mx-auto mt-12 px-4">
+        {/* Header Section */}
         <div className="text-center mb-12 space-y-4">
           <h1 className="text-5xl font-black tracking-tight text-white mb-2">
-            PERMISSIONLESS <span className="text-emerald-500">BOUNTIES</span>
+            <span className="text-emerald-500">BlockBounty</span>
           </h1>
-          <p className="text-slate-400 max-w-lg mx-auto">
-            Create decentralized tasks or hunt for rewards on Bitcoin.
+          <p className="text-slate-400 max-w-lg mx-auto text-lg">
+            Trustless, Programmable Escrow on Bitcoin fueled by ZK-Proofs.
           </p>
         </div>
 
@@ -241,7 +240,7 @@ export default function BountyProtocol() {
 
                 <div className="space-y-2">
                     <label className="text-xs uppercase tracking-widest text-emerald-500 font-bold flex items-center gap-2">
-                        <UserCheck size={14} /> Assigned Hunter (Address)
+                        <UserCheck size={14} /> Designated Hunter (Address)
                     </label>
                     <input 
                         value={designatedHunter} 
@@ -250,7 +249,6 @@ export default function BountyProtocol() {
                         placeholder="Paste the Hunter's Wallet Address here..." 
                         className="w-full bg-slate-950 border border-emerald-500/50 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-400 transition-colors font-mono" 
                     />
-                    <p className="text-xs text-slate-500">Only this wallet will be able to generate the ZK proof and claim the funds.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
@@ -268,7 +266,7 @@ export default function BountyProtocol() {
                 </div>
 
                 <button onClick={handleMint} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-glow hover:shadow-glow-lg">
-                  <Zap size={20} /> MINT BOUNTY ON-CHAIN
+                  <Zap size={20} /> MINT BLOCKBOUNTY
                 </button>
               </motion.div>
             ) : (
